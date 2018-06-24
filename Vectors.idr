@@ -92,4 +92,4 @@ allLengths3 [] = [] -- originally this was ?allLengths3_rhs_1
 -- Idris picked 0  for the head as the first possible valid answer
 -- and then noticed it could call allLengths3 on the tail to do the rest.
 -- The 0 isn't what we want so we fill in with a hole
-allLengths3 (x :: xs) = ?allLengths3Head :: allLengths3 xs
+allLengths3 (x :: xs) = ?allLengths3H ead :: allLengths3 xs
