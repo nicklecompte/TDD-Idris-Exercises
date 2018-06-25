@@ -40,5 +40,5 @@ myReplWith state prompt onInput =
        input <- getLine
        case (onInput input) of
         Just (res,newState) => do putStrLn res
-                                  myReplWith newState prompt onInput
+                                   myReplWith newState prompt onInput
         Nothing => putStrLn "bye-bye :("

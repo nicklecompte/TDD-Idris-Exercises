@@ -1,0 +1,9 @@
+AdderType : (numargs : Nat) -> (numType:Type) -> Type
+AdderType Z numType = numType
+AdderType (S k) numType = (next : numType) -> AdderType k numType
+
+adder : Num numType =>
+        (numargs: Nat) -> (acc : numType) -> AdderType numargs numType
+adder Z acc = acc
+adder (S k) acc = (\summand => (adder k (acc + summand)))
+
