@@ -11,11 +11,13 @@ infixl does the same for left-associative
 
 data Schema = SString
             | SInt
+            | SChar
             | (.+.) Schema Schema
 
 SchemaType : Schema -> Type
 SchemaType SString = String
 SchemaType SInt = Int
+SchemaType SChar = Char
 SchemaType (x .+. y) = (SchemaType x, SchemaType y)
 
 record DataStore where
@@ -31,60 +33,117 @@ addToStore (MkData schema size items) str = MkData schema _ (addToData items)
     addToData [] = [str]
     addToData (x :: xs) = x :: addToData xs
 
-{-
+display : SchemaType schema -> String
+display {schema = SString} item = item
+display {schema = SInt} item = show item
+display {schema = SChar} item = show item
+display {schema = (x .+. y)} (itemLeft, itemRight) =  (display itemLeft) ++ "," ++ (display itemRight)
 
-doing things like this makes for very tedious projection functions.
-Idris has a record type to use instead
+getEntry : (pos : Integer) -> (store : DataStore) -> Maybe (String,DataStore)
+getEntry pos store
+    = let store_items = items store in
+          case integerToFin pos (size store) of
+            Nothing => Just ("Out of range :( \n", store)
+            Just id => Just(display (index id (items store)) ++ "\n",store)
 
-data DataStore : Type where
-  MKData : (schema : Schema) ->
-           (size : Nat) ->
-           (items : Vect size (SchemaType schema)) ->
-           DataStore
+getAll : (store : DataStore) -> Maybe (String,DataStore)
+getAll store
+    = Just ( concat (map (\x => (display x) ++ "\n") (items store) ), store)
+
+data Command : Schema -> Type where
+  SetSchema : (newSchema : Schema) -> Command schema
+  Add : SchemaType schema -> Command schema
+  Get : Maybe Integer -> Command schema
+  Quit : Command schema            
 
 
-size : DataStore -> Nat
-size (MKData schema' size' items') = size' -- this syntax isn't necessary
--- this is basically a record type and Idris has sugar for that
--- kinda like in C# though, let's do some getters with private backing fields :)
-           
+parseSchema : List String -> Maybe Schema
+parseSchema ("String" :: xs)
+  = case xs of
+        [] => Just SString
+        _ => do xs_schema <- parseSchema xs
+                Just (SString .+. xs_schema)
+parseSchema ("Int" :: xs)                  
+  = case xs of
+         [] => Just SInt
+         _ => case parseSchema xs of
+                  Nothing => Nothing
+                  Just (xs_schema) => Just (SInt .+. xs_schema)
+parseSchema ("Char" :: xs)
+  = case xs of
+          [] => Just SChar
+          _ => case parseSchema xs of
+                  Nothing => Nothing
+                  Just (xsSchema) => Just (SChar .+. xsSchema)                  
 
-items : (store: DataStore) -> Vect (size store) String -- we project the size of the store out of the input and type it to the output
-items (MKData size' items') = items'
+parseSchema _ = Nothing                  
 
-addToStore : DataStore -> String -> DataStore
-addToStore (MKData size items) str = sMKData (S size) (str :: items)
+stringToSchemaPrefixHelper : (schema : Schema) -> String -> Maybe(SchemaType schema, String) -- parses the first part of an input and returns the rest of the string if it works
+stringToSchemaPrefixHelper SString input = getQuoted (unpack input)
+  where
+    getQuoted : List Char -> Maybe(String, String)
+    getQuoted ('"' :: xs)
+      = case span (/= '"') xs of
+              (quoted, '"' :: rest) => Just (pack quoted, ltrim (pack rest))
+              _ => Nothing
+    getQuoted _ = Nothing
+stringToSchemaPrefixHelper SInt input = case span isDigit input of
+                                      ("",remainder) => Nothing -- if prefix of span is empty when checking isDigit, then there aren't any numbers in the input
+                                      (num,remainder) => Just(cast num, ltrim (remainder))
+stringToSchemaPrefixHelper SChar input = let (li,remainder) = span (/= ' ') input in
+                                              case (unpack li) of
+                                                    (x :: []) => Just (x, ltrim(remainder))
+                                                    _ => Nothing
+stringToSchemaPrefixHelper (schemaX .+. schemaY) input = case stringToSchemaPrefixHelper schemaX input of
+                                                              Nothing => Nothing
+                                                              Just (xValu, input') => 
+                                                                    case stringToSchemaPrefixHelper schemaY input' of
+                                                                          Nothing => Nothing
+                                                                          Just (yValu, input'') => Just((xValu,yValu),input'')
 
-data Command = Add String | Get Integer | Size | Quit
+stringToSchema : (schema : Schema) -> (str : String)  -> Maybe (SchemaType schema) -- could fail and return Nothing
+stringToSchema schema str = case (stringToSchemaPrefixHelper schema str) of
+                                 Just (parsedSchemaType, "") => Just parsedSchemaType -- if it parses correctly and returns an empty string, 
+                                                                                      -- then stringToSchema worked and we return the parsed SchemaType
+                                 Just _ => Nothing -- parsed worked and the parsedSchemaType is what we want. But the result string is NOT empty - so there was more data than assumed by the schema and this fails.
+                                 Nothing => Nothing -- parsing failed entirely                                                                                      
 
-parseCommand : (cmd : String) -> (args : String) -> Maybe Command
-parseCommand "add" str = Just (Add str)
-parseCommand "get" val = case all isDigit (unpack val) of -- all : (pred: a -> Bool) -> List a -> bool checks if pred is satisifed on ervy elt of list. isDigit : Char -> bool if the char is a digit. unPack : String -> List char
+parseCommand : (schema : Schema) -> String -> String -> Maybe (Command schema)
+parseCommand schema "add" str = case (stringToSchema schema str) of
+                                      Nothing => Nothing
+                                      Just parsedOk => Just (Add parsedOk)
+parseCommand schema "get" "" = Just (Get Nothing)                                      
+parseCommand schema "get" val = case all isDigit (unpack val) of -- all : (pred: a -> Bool) -> List a -> bool checks if pred is satisifed on ervy elt of list. isDigit : Char -> bool if the char is a digit. unPack : String -> List char
                               False => Nothing
-                              True => Just (Get (cast val))
-parseCommand "size" "" = Just Size
-parseCommand "quit" "" = Just Quit
-parseCommand _ _ = Nothing
+                              True => Just (Get (Just (cast val)))
+-- parseCommand schema "size" "" = Just Size
+parseCommand schema "schema" defn = case parseSchema (words defn) of
+                                        Nothing => Nothing
+                                        Just schema' => Just (SetSchema schema')
+                                        
+parseCommand schema "quit" "" = Just Quit
+parseCommand _ _ _ = Nothing
 
-parse : (input:String) -> Maybe Command
-parse input = case (span (/= ' ') input) of -- span splits the string where the first character in the lambda fails
-                   (cmd,args) => parseCommand cmd (ltrim args) -- ltrim removes leading whitespace
+parse : (schema : Schema) -> (input:String) -> Maybe (Command schema)
+parse schema input = case span (/= ' ') input of
+                          (cmd, args) => parseCommand schema cmd (ltrim args)
 
-processCommand : (cmd : Command) -> (store : DataStore) -> Maybe (String, DataStore)
-processCommand (Add item) store = Just ("ID " ++ show (size store) ++ "\n", addToStore store item)
-processCommand (Get index) store = case (integerToFin index (size store)) of
-                                    Nothing => Just ("Out of range :( \n", store)
-                                    Just id => let item = (Data.Vect.index id (items store)) in
-                                                   Just ("Item is: " ++ item ++ "\n", store)
-processCommand (Size) store = Just ("Size is " ++ (show (size store)) ++ "\n",store)
-processCommand Quit store = Nothing
+setSchema : (store : DataStore) -> Schema -> Maybe DataStore
+setSchema store schema = case size store of -- we want the datastore to be empty if we're updating the schema
+                              Z => Just (MkData schema _ [])                           
+                              _ => Nothing
 
 processInput : DataStore -> String -> Maybe (String, DataStore)
-processInput store inp = case parse inp of
+processInput store inp = case parse (schema store) inp of
                               Nothing => Just ("Invalid command \n", store)
-                              Just cmd => processCommand cmd store
+                              Just (Add item) => Just ("ID " ++ show (size store) ++ "\n", addToStore store item)
+                              Just (Get Nothing) => getAll store
+                              Just (Get (Just pos)) => getEntry pos store
+                              Just (SetSchema schema) => case setSchema store schema of
+                                                              Nothing => Just ("Can't update schema :( here's the old store \n", store)
+                                                              Just newStore => Just ("Set schema. \n", newStore)
+                              Just Quit => Nothing
 
 
-main : IO ()
-main = replWith (MKData _ []) "Command:" processInput
--}
+main : IO ()                              
+main = replWith (MkData SString _ []) "Command: " processInput
