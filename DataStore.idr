@@ -66,15 +66,13 @@ parseSchema ("String" :: xs)
 parseSchema ("Int" :: xs)                  
   = case xs of
          [] => Just SInt
-         _ => case parseSchema xs of
-                  Nothing => Nothing
-                  Just (xs_schema) => Just (SInt .+. xs_schema)
+         _ => do xs_schema <- parseSchema xs
+                 Just (SInt .+. xs_schema)
 parseSchema ("Char" :: xs)
   = case xs of
           [] => Just SChar
-          _ => case parseSchema xs of
-                  Nothing => Nothing
-                  Just (xsSchema) => Just (SChar .+. xsSchema)                  
+          _ => do xs_schema <- parseSchema xs
+                  Just (SChar .+. xs_schema)                  
 
 parseSchema _ = Nothing                  
 
@@ -94,12 +92,9 @@ stringToSchemaPrefixHelper SChar input = let (li,remainder) = span (/= ' ') inpu
                                               case (unpack li) of
                                                     (x :: []) => Just (x, ltrim(remainder))
                                                     _ => Nothing
-stringToSchemaPrefixHelper (schemaX .+. schemaY) input = case stringToSchemaPrefixHelper schemaX input of
-                                                              Nothing => Nothing
-                                                              Just (xValu, input') => 
-                                                                    case stringToSchemaPrefixHelper schemaY input' of
-                                                                          Nothing => Nothing
-                                                                          Just (yValu, input'') => Just((xValu,yValu),input'')
+stringToSchemaPrefixHelper (schemaX .+. schemaY) input = do (xValu, input') <- stringToSchemaPrefixHelper schemaX input
+                                                            (yValu, input'') <- stringToSchemaPrefixHelper schemaY input'
+                                                            Just((xValu,yValu),input'')
 
 stringToSchema : (schema : Schema) -> (str : String)  -> Maybe (SchemaType schema) -- could fail and return Nothing
 stringToSchema schema str = case (stringToSchemaPrefixHelper schema str) of
@@ -109,9 +104,8 @@ stringToSchema schema str = case (stringToSchemaPrefixHelper schema str) of
                                  Nothing => Nothing -- parsing failed entirely                                                                                      
 
 parseCommand : (schema : Schema) -> String -> String -> Maybe (Command schema)
-parseCommand schema "add" str = case (stringToSchema schema str) of
-                                      Nothing => Nothing
-                                      Just parsedOk => Just (Add parsedOk)
+parseCommand schema "add" str = do parsedOk <- (stringToSchema schema str)
+                                   Just (Add parsedOk)
 parseCommand schema "get" "" = Just (Get Nothing)                                      
 parseCommand schema "get" val = case all isDigit (unpack val) of -- all : (pred: a -> Bool) -> List a -> bool checks if pred is satisifed on ervy elt of list. isDigit : Char -> bool if the char is a digit. unPack : String -> List char
                               False => Nothing
