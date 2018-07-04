@@ -118,8 +118,11 @@ data Elem : (value : a) -> (xs : Vect k a) -> Type where
     Here : Elem x (x::xs) -- proof that x is the first element of a vector
     There : (later : Elem x xs) -> Elem x (y :: xs) -- proof that if x is in xs, then x must be in y::xs
 
---Uninhabited (Elem value []) where
---    uninhabited Refl impossible        
+noEmptyElem : {x : a} -> Elem x [] -> Void
+noEmptyElem Here impossible
+        
+Uninhabited (Elem x []) where
+    uninhabited = noEmptyElem    
 
 removeElem : DecEq a => (value : a) -> 
                         (y : Vect (S n) a) -> 
@@ -129,6 +132,33 @@ removeElem value (value :: xs) Here = xs
 removeElem {n = Z} value (x :: []) (There later) = absurd later
 removeElem {n = (S k)} value (x :: xs) (There later) = x :: (removeElem value xs later)
 
+removeElem_auto : DecEq a => (value : a) -> (xs : Vect (S n) a) -> {auto prf : Elem value xs} -> Vect n a
+removeElem_auto value xs {prf} = removeElem value xs prf
+
+removeElem_f : DecEq a => (value : a) -> 
+               (y : Vect (S n) a) -> 
+               {auto prf: Elem value y} ->
+               Vect n a
+removeElem_f value (value :: xs) {prf = Here} = xs
+removeElem_f {n = Z} value (x :: []) {prf = (There later)} = absurd later
+removeElem_f {n = (S k)} value (x :: xs) {prf = (There later)} = x :: (removeElem value xs later)
 
 maryInVector : Elem "Mary" ["Peter","Paul","Mary"]       
 maryInVector = There (There Here)                         
+
+notInNil : Elem value [] -> Void
+notInNil Here impossible
+notInNil (There _) impossible
+
+notInTail : (notAtStart : (x = value) -> Void) -> (contra : Elem value xs -> Void) -> Elem value (x :: xs) -> Void
+notInTail notAtStart contra Here = notAtStart Refl
+notInTail notAtStart contra (There later) = contra later
+
+
+isElem : DecEq a => (value : a) -> (xs : Vect n a) -> Dec (Elem value xs)
+isElem value [] = No notInNil
+isElem value (x :: xs) = case decEq x value of
+                              (Yes Refl) => Yes Here
+                              (No notAtStart) => case isElem value xs of
+                                                    (Yes prf) => Yes (There prf)
+                                                    (No contra) => No (notInTail notAtStart contra)

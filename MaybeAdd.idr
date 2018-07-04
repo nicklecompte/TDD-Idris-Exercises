@@ -7,7 +7,7 @@ maybeAddLong x y = case x of
 
 maybeAddCombinator : Maybe Int -> Maybe Int -> Maybe Int
 maybeAddCombinator x y = x >>= \x1 =>
-                                y >>= \y1 => Just(x1 + y1)
+                                y >>= \y1 => Just (x1 + y1)
                                 
 maybeAddDo : Maybe Int -> Maybe Int -> Maybe Int
 maybeAddDo x y = do x1 <- x
